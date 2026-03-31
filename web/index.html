@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Calculator" />
+  <meta name="theme-color" content="#000000" />
+  <link rel="manifest" href="manifest.json" />
+  <title>Calculator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+      height: 100dvh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-end;
+      overflow: hidden;
+      padding-bottom: env(safe-area-inset-bottom);
+      touch-action: manipulation;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .calculator {
+      width: 100%;
+      max-width: 430px;
+      padding: 0 12px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    /* Display */
+    .display {
+      text-align: right;
+      padding: 8px 8px 16px;
+      font-size: clamp(48px, 14vw, 80px);
+      font-weight: 200;
+      letter-spacing: -2px;
+      white-space: nowrap;
+      overflow: hidden;
+      line-height: 1.1;
+      transition: font-size 0.1s;
+    }
+
+    /* Button grid */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    /* Base button */
+    button {
+      border: none;
+      cursor: pointer;
+      border-radius: 50%;
+      aspect-ratio: 1;
+      font-size: clamp(22px, 7vw, 34px);
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 0.08s, transform 0.08s;
+      -webkit-user-select: none;
+      user-select: none;
+      width: 100%;
+      font-family: inherit;
+    }
+
+    button:active {
+      opacity: 0.65;
+      transform: scale(0.93);
+    }
+
+    /* Color variants */
+    .btn-num      { background: #333; color: #fff; }
+    .btn-util     { background: #a5a5a5; color: #000; }
+    .btn-op       { background: #ff9500; color: #fff; }
+    .btn-special  { background: #3a7bd5; color: #fff; }
+
+    /* Active operator highlight */
+    button.op-active {
+      background: #fff;
+      color: #ff9500;
+    }
+
+    /* x^y spans 2 cols, pill shape */
+    .btn-wide {
+      grid-column: span 2;
+      border-radius: 999px;
+      aspect-ratio: unset;
+      height: auto;
+      padding: 0;
+    }
+
+    /* Give the wide button same height as others via JS */
+    .btn-wide-wrapper {
+      grid-column: span 2;
+      display: flex;
+    }
+    .btn-wide-wrapper button {
+      flex: 1;
+      border-radius: 999px;
+      aspect-ratio: unset;
+    }
+  </style>
+</head>
+<body>
+<div class="calculator">
+  <div class="display" id="display">0</div>
+
+  <div class="grid">
+    <!-- Row 1 -->
+    <button class="btn-util" onclick="tap('AC')"    id="ac-btn">AC</button>
+    <button class="btn-util" onclick="tap('+/-')">+/-</button>
+    <button class="btn-util" onclick="tap('%')">%</button>
+    <button class="btn-op"   onclick="tap('÷')" id="op-÷">÷</button>
+
+    <!-- Row 2 -->
+    <button class="btn-num"  onclick="tap('7')">7</button>
+    <button class="btn-num"  onclick="tap('8')">8</button>
+    <button class="btn-num"  onclick="tap('9')">9</button>
+    <button class="btn-op"   onclick="tap('×')" id="op-×">×</button>
+
+    <!-- Row 3 -->
+    <button class="btn-num"  onclick="tap('4')">4</button>
+    <button class="btn-num"  onclick="tap('5')">5</button>
+    <button class="btn-num"  onclick="tap('6')">6</button>
+    <button class="btn-op"   onclick="tap('−')" id="op-−">−</button>
+
+    <!-- Row 4 -->
+    <button class="btn-num"  onclick="tap('1')">1</button>
+    <button class="btn-num"  onclick="tap('2')">2</button>
+    <button class="btn-num"  onclick="tap('3')">3</button>
+    <button class="btn-op"   onclick="tap('+')" id="op-+">+</button>
+
+    <!-- Row 5 -->
+    <div class="btn-wide-wrapper">
+      <button class="btn-special" onclick="tap('xʸ')">xʸ</button>
+    </div>
+    <button class="btn-special" onclick="tap('π')">π</button>
+    <button class="btn-num"     onclick="tap('.')">.</button>
+    <button class="btn-op"      onclick="tap('=')">＝</button>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let display       = '0';
+  let stored        = 0;
+  let pending       = null;   // '+' | '−' | '×' | '÷' | 'xʸ'
+  let resetNext     = false;
+  let justEvaluated = false;
+  let hasDecimal    = false;
+
+  // ── Display helpers ────────────────────────────────────────────────────────
+  const el = document.getElementById('display');
+
+  function setDisplay(val) {
+    display = String(val);
+    el.textContent = display;
+    // Shrink font for long strings
+    const len = display.replace('-', '').replace('.', '').length;
+    el.style.fontSize = len > 9 ? 'clamp(28px,8vw,44px)'
+                      : len > 6 ? 'clamp(38px,11vw,60px)'
+                                : '';
+  }
+
+  function formatNum(n) {
+    if (!isFinite(n) || isNaN(n)) return 'Error';
+    // Integer check
+    if (Number.isInteger(n) && Math.abs(n) < 1e10) return String(n);
+    // Scientific for very large/small
+    const abs = Math.abs(n);
+    if (abs >= 1e10 || (abs > 0 && abs < 1e-6)) return n.toPrecision(6);
+    // General: up to 10 significant digits, strip trailing zeros
+    return parseFloat(n.toPrecision(10)).toString();
+  }
+
+  function isError() { return display === 'Error'; }
+
+  // ── Operator highlight ─────────────────────────────────────────────────────
+  const opIds = ['÷','×','−','+'];
+  function highlightOp(op) {
+    opIds.forEach(o => document.getElementById('op-' + o)?.classList.remove('op-active'));
+    if (op) document.getElementById('op-' + op)?.classList.add('op-active');
+  }
+
+  // ── Core logic ─────────────────────────────────────────────────────────────
+  function evaluate() {
+    const rhs = parseFloat(display);
+    let result;
+    switch (pending) {
+      case '+':  result = stored + rhs; break;
+      case '−':  result = stored - rhs; break;
+      case '×':  result = stored * rhs; break;
+      case '÷':  result = rhs === 0 ? NaN : stored / rhs; break;
+      case 'xʸ': result = Math.pow(stored, rhs); break;
+      default:   result = rhs;
+    }
+    return result;
+  }
+
+  function tap(key) {
+    if (isError() && key !== 'AC') { tap('AC'); return; }
+
+    // ── Digits ──────────────────────────────────────────────────────────────
+    if ('0123456789'.includes(key)) {
+      if (justEvaluated) { setDisplay(key === '0' ? '0' : key); hasDecimal = false; justEvaluated = false; resetNext = false; return; }
+      if (resetNext)     { setDisplay(key === '0' ? '0' : key); hasDecimal = false; resetNext = false; return; }
+      const cur = display === '0' ? key : display + key;
+      const digits = cur.replace(/\D/g, '').length;
+      if (digits <= 9) setDisplay(cur);
+      return;
+    }
+
+    // ── Decimal ─────────────────────────────────────────────────────────────
+    if (key === '.') {
+      if (justEvaluated || resetNext) { setDisplay('0.'); hasDecimal = true; justEvaluated = false; resetNext = false; return; }
+      if (!hasDecimal) { setDisplay(display + '.'); hasDecimal = true; }
+      return;
+    }
+
+    // ── AC ───────────────────────────────────────────────────────────────────
+    if (key === 'AC') {
+      setDisplay('0'); stored = 0; pending = null; resetNext = false; justEvaluated = false; hasDecimal = false;
+      document.getElementById('ac-btn').textContent = 'AC';
+      highlightOp(null);
+      return;
+    }
+
+    // ── +/- ──────────────────────────────────────────────────────────────────
+    if (key === '+/-') {
+      if (display === '0') return;
+      setDisplay(display.startsWith('-') ? display.slice(1) : '-' + display);
+      return;
+    }
+
+    // ── % ────────────────────────────────────────────────────────────────────
+    if (key === '%') {
+      setDisplay(formatNum(parseFloat(display) / 100));
+      hasDecimal = display.includes('.');
+      return;
+    }
+
+    // ── π ────────────────────────────────────────────────────────────────────
+    if (key === 'π') {
+      const pi = formatNum(Math.PI);
+      setDisplay(pi);
+      hasDecimal = true;
+      justEvaluated = true;
+      resetNext = false;
+      return;
+    }
+
+    // ── Binary operators (including xʸ) ──────────────────────────────────────
+    if (['+','−','×','÷','xʸ'].includes(key)) {
+      const cur = parseFloat(display);
+      if (pending && !resetNext) {
+        stored = evaluate();
+        setDisplay(formatNum(stored));
+      } else {
+        stored = cur;
+      }
+      pending = key;
+      resetNext = true;
+      justEvaluated = false;
+      hasDecimal = false;
+      highlightOp(['÷','×','−','+'].includes(key) ? key : null);
+      return;
+    }
+
+    // ── = ────────────────────────────────────────────────────────────────────
+    if (key === '=') {
+      if (!pending) return;
+      const result = evaluate();
+      setDisplay(formatNum(result));
+      hasDecimal = display.includes('.');
+      stored = result;
+      pending = null;
+      resetNext = false;
+      justEvaluated = true;
+      highlightOp(null);
+      return;
+    }
+  }
+
+  // Show "C" instead of "AC" once user has typed something
+  document.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const acBtn = document.getElementById('ac-btn');
+      acBtn.textContent = (display !== '0' || pending) ? 'C' : 'AC';
+    });
+  });
+
+  // "C" clears current entry only
+  document.getElementById('ac-btn').addEventListener('click', function() {
+    if (this.textContent === 'C') {
+      setDisplay('0'); hasDecimal = false; resetNext = false;
+      this.textContent = 'AC';
+    }
+  }, true);
+</script>
+</body>
+</html>
