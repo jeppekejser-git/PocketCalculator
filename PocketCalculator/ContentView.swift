@@ -10,10 +10,10 @@ enum CalcButtonStyle {
 
     var background: Color {
         switch self {
-        case .number:    return Color(red: 0.2,  green: 0.2,  blue: 0.2)
-        case .utility:   return Color(red: 0.647, green: 0.647, blue: 0.647)
-        case .operator:  return Color(red: 1.0,  green: 0.584, blue: 0.0)
-        case .special:   return Color(red: 0.2,  green: 0.502, blue: 0.8)
+        case .number:   return Color(red: 0.200, green: 0.200, blue: 0.200)
+        case .utility:  return Color(red: 0.647, green: 0.647, blue: 0.647)
+        case .operator: return Color(red: 1.000, green: 0.584, blue: 0.000)
+        case .special:  return Color(red: 0.200, green: 0.502, blue: 0.800)
         }
     }
 
@@ -31,7 +31,6 @@ struct CalcButton: Identifiable {
     let id = UUID()
     let label: String
     let style: CalcButtonStyle
-    var widthMultiplier: CGFloat = 1.0
 }
 
 // MARK: - Main View
@@ -39,7 +38,7 @@ struct CalcButton: Identifiable {
 struct ContentView: View {
     @StateObject private var model = CalculatorModel()
 
-    // Button grid rows
+    // Button grid: rows 0-4 (4 columns each)
     private let rows: [[CalcButton]] = [
         [
             CalcButton(label: "AC",  style: .utility),
@@ -73,37 +72,23 @@ struct ContentView: View {
         ]
     ]
 
-    // Bottom extra row
-    private let extraRow: CalcButton = CalcButton(label: "xʸ", style: .special)
-
     var body: some View {
         GeometryReader { geo in
             ZStack {
                 Color.black.ignoresSafeArea()
 
                 VStack(spacing: 0) {
-                    Spacer()
+                    Spacer(minLength: 0)
 
                     // Display
                     displayArea
                         .padding(.horizontal, 24)
-                        .padding(.bottom, 8)
+                        .padding(.bottom, 12)
 
-                    // Main button grid
-                    VStack(spacing: buttonSpacing(geo)) {
-                        ForEach(rows.indices, id: \.self) { rowIndex in
-                            HStack(spacing: buttonSpacing(geo)) {
-                                ForEach(rows[rowIndex]) { btn in
-                                    buttonView(btn, size: buttonSize(geo))
-                                }
-                            }
-                        }
-
-                        // x^y wide button
-                        wideButtonView(extraRow, geo: geo)
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+                    // Main button grid + x^y row
+                    buttonGrid(geo: geo)
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, max(geo.safeAreaInsets.bottom, 16))
                 }
             }
         }
@@ -112,15 +97,12 @@ struct ContentView: View {
     // MARK: - Display
 
     private var displayArea: some View {
-        HStack {
-            Spacer()
-            Text(model.display)
-                .font(.system(size: displayFontSize(model.display), weight: .thin, design: .default))
-                .foregroundColor(.white)
-                .lineLimit(1)
-                .minimumScaleFactor(0.3)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
+        Text(model.display)
+            .font(.system(size: displayFontSize(model.display), weight: .thin, design: .default))
+            .foregroundColor(.white)
+            .lineLimit(1)
+            .minimumScaleFactor(0.3)
+            .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func displayFontSize(_ text: String) -> CGFloat {
@@ -130,49 +112,69 @@ struct ContentView: View {
         return 40
     }
 
-    // MARK: - Button Sizes
+    // MARK: - Button Grid
+
+    private func buttonGrid(geo: GeometryProxy) -> some View {
+        let spacing = buttonSpacing(geo)
+        let size    = buttonSize(geo)
+
+        return VStack(spacing: spacing) {
+            // Rows 0-4: four equal-sized buttons per row
+            ForEach(rows.indices, id: \.self) { rowIndex in
+                HStack(spacing: spacing) {
+                    ForEach(rows[rowIndex]) { btn in
+                        roundButton(label: btn.label,
+                                    style: btn.style,
+                                    width: size,
+                                    height: size,
+                                    fontSize: size * 0.38,
+                                    cornerRadius: size / 2)
+                    }
+                }
+            }
+
+            // x^y: wide button spanning ~2 cells
+            HStack(spacing: spacing) {
+                roundButton(label: "xʸ",
+                            style: .special,
+                            width: size * 2 + spacing,
+                            height: size,
+                            fontSize: size * 0.38,
+                            cornerRadius: size / 2)
+                Spacer()
+            }
+        }
+    }
+
+    // MARK: - Reusable Rounded Button
+
+    private func roundButton(label: String,
+                             style: CalcButtonStyle,
+                             width: CGFloat,
+                             height: CGFloat,
+                             fontSize: CGFloat,
+                             cornerRadius: CGFloat) -> some View {
+        Button(action: { handleTap(label) }) {
+            Text(label)
+                .font(.system(size: fontSize, weight: .regular))
+                .foregroundColor(style.foreground)
+                .frame(width: width, height: height)
+                .background(style.background)
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius,
+                                            style: .continuous))
+        }
+        .buttonStyle(CalcButtonPressStyle())
+    }
+
+    // MARK: - Sizing Helpers
 
     private func buttonSpacing(_ geo: GeometryProxy) -> CGFloat {
-        return (geo.size.width - 32) * 0.03
+        (geo.size.width - 32) * 0.030
     }
 
     private func buttonSize(_ geo: GeometryProxy) -> CGFloat {
         let spacing = buttonSpacing(geo)
         return (geo.size.width - 32 - spacing * 3) / 4
-    }
-
-    // MARK: - Individual Button View
-
-    @ViewBuilder
-    private func buttonView(_ btn: CalcButton, size: CGFloat) -> some View {
-        Button(action: { handleTap(btn.label) }) {
-            Text(btn.label)
-                .font(.system(size: size * 0.38, weight: .regular))
-                .foregroundColor(btn.style.foreground)
-                .frame(width: size, height: size)
-                .background(btn.style.background)
-                .clipShape(Circle())
-        }
-    }
-
-    // MARK: - Wide Button View (x^y)
-
-    @ViewBuilder
-    private func wideButtonView(_ btn: CalcButton, geo: GeometryProxy) -> some View {
-        let spacing = buttonSpacing(geo)
-        let size = buttonSize(geo)
-        let wideWidth = size * 2 + spacing
-
-        Button(action: { handleTap(btn.label) }) {
-            Text(btn.label)
-                .font(.system(size: size * 0.38, weight: .regular))
-                .foregroundColor(btn.style.foreground)
-                .frame(width: wideWidth, height: size)
-                .background(btn.style.background)
-                .clipShape(RoundedRectangle(cornerRadius: size / 2))
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 0)
     }
 
     // MARK: - Action Dispatch
@@ -202,6 +204,16 @@ struct ContentView: View {
         case "9":    model.digitTapped(9)
         default:     break
         }
+    }
+}
+
+// MARK: - Button Press Style (subtle scale feedback)
+
+struct CalcButtonPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.94 : 1.0)
+            .animation(.easeInOut(duration: 0.08), value: configuration.isPressed)
     }
 }
 

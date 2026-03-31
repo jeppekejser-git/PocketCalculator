@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		AA000013000000000000013 /* PocketCalculatorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000020; };
 		AA000021 /* PocketCalculatorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000020; };
 		AA000023 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000022; };
 		AA000025 /* CalculatorModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA000024; };

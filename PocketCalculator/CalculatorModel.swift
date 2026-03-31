@@ -15,7 +15,7 @@ class CalculatorModel: ObservableObject {
     private var hasDecimal: Bool = false
     private var justEvaluated: Bool = false
 
-    // MARK: - Input Handling
+    // MARK: - Digit Input
 
     func digitTapped(_ digit: Int) {
         if justEvaluated {
@@ -23,6 +23,7 @@ class CalculatorModel: ObservableObject {
             hasDecimal = false
             justEvaluated = false
             shouldResetDisplay = false
+            currentValue = Double(digit)
             return
         }
         if shouldResetDisplay {
@@ -30,10 +31,13 @@ class CalculatorModel: ObservableObject {
             hasDecimal = false
             shouldResetDisplay = false
         } else {
-            if display == "0" {
-                display = "\(digit)"
+            if display == "0" || display == "-0" {
+                let sign = display.hasPrefix("-") ? "-" : ""
+                display = sign + "\(digit)"
             } else {
-                if display.count < 10 {
+                // Limit visible digits to avoid overflow
+                let digitCount = display.filter { $0.isNumber }.count
+                if digitCount < 9 {
                     display += "\(digit)"
                 }
             }
@@ -41,12 +45,15 @@ class CalculatorModel: ObservableObject {
         currentValue = Double(display) ?? 0
     }
 
+    // MARK: - Decimal Input
+
     func decimalTapped() {
         if justEvaluated {
             display = "0."
             hasDecimal = true
             justEvaluated = false
             shouldResetDisplay = false
+            currentValue = 0
             return
         }
         if shouldResetDisplay {
@@ -55,11 +62,12 @@ class CalculatorModel: ObservableObject {
             shouldResetDisplay = false
             return
         }
-        if !hasDecimal {
-            display += "."
-            hasDecimal = true
-        }
+        guard !hasDecimal else { return }
+        display += "."
+        hasDecimal = true
     }
+
+    // MARK: - Pi
 
     func piTapped() {
         let pi = Double.pi
@@ -83,7 +91,7 @@ class CalculatorModel: ObservableObject {
     }
 
     func toggleSign() {
-        if display == "0" { return }
+        guard display != "0", display != "Error" else { return }
         if display.hasPrefix("-") {
             display = String(display.dropFirst())
         } else {
@@ -93,6 +101,7 @@ class CalculatorModel: ObservableObject {
     }
 
     func percent() {
+        guard display != "Error" else { return }
         currentValue = (Double(display) ?? 0) / 100.0
         display = formatValue(currentValue)
         hasDecimal = display.contains(".")
@@ -103,13 +112,13 @@ class CalculatorModel: ObservableObject {
     // MARK: - Binary Operations
 
     func operationTapped(_ op: CalcOperation) {
+        guard display != "Error" else { return }
         currentValue = Double(display) ?? 0
+        // Chain operations: evaluate any pending op before storing new one
         if pendingOperation != .none && !shouldResetDisplay {
             evaluate()
-            storedValue = currentValue
-        } else {
-            storedValue = currentValue
         }
+        storedValue = currentValue
         pendingOperation = op
         shouldResetDisplay = true
         hasDecimal = false
@@ -117,6 +126,10 @@ class CalculatorModel: ObservableObject {
     }
 
     func equals() {
+        guard display != "Error" else {
+            allClear()
+            return
+        }
         currentValue = Double(display) ?? 0
         evaluate()
         pendingOperation = .none
@@ -125,12 +138,13 @@ class CalculatorModel: ObservableObject {
         justEvaluated = true
     }
 
-    // MARK: - Private Helpers
+    // MARK: - Private Evaluation
 
     private func evaluate() {
         let rhs = currentValue
         let lhs = storedValue
-        var result: Double = 0
+        var result: Double
+
         switch pendingOperation {
         case .add:
             result = lhs + rhs
@@ -139,12 +153,8 @@ class CalculatorModel: ObservableObject {
         case .multiply:
             result = lhs * rhs
         case .divide:
-            if rhs == 0 {
-                display = "Error"
-                currentValue = 0
-                storedValue = 0
-                pendingOperation = .none
-                shouldResetDisplay = true
+            guard rhs != 0 else {
+                setError()
                 return
             }
             result = lhs / rhs
@@ -153,21 +163,45 @@ class CalculatorModel: ObservableObject {
         case .none:
             return
         }
+
+        guard !result.isNaN, !result.isInfinite else {
+            setError()
+            return
+        }
+
         currentValue = result
         storedValue = result
         display = formatValue(result)
         hasDecimal = display.contains(".")
     }
 
+    private func setError() {
+        display = "Error"
+        currentValue = 0
+        storedValue = 0
+        pendingOperation = .none
+        shouldResetDisplay = true
+    }
+
+    // MARK: - Display Formatting
+
     private func formatValue(_ value: Double) -> String {
-        if value.isNaN || value.isInfinite {
-            return "Error"
-        }
-        // Show as integer if it is a whole number
-        if value == value.rounded() && abs(value) < 1_000_000_000 {
+        guard !value.isNaN, !value.isInfinite else { return "Error" }
+
+        // Show as integer when it's a whole number within safe integer range
+        if value == value.rounded(.towardZero),
+           abs(value) < 1_000_000_000,
+           value == Double(Int(value)) {
             return "\(Int(value))"
         }
-        // Use up to 10 significant digits, trim trailing zeros
+
+        // For very large or very small numbers, use scientific notation
+        let absVal = abs(value)
+        if absVal >= 1e10 || (absVal < 1e-6 && absVal > 0) {
+            return String(format: "%.4e", value)
+        }
+
+        // Up to 10 significant figures, strip trailing zeros
         let formatted = String(format: "%.10g", value)
         return formatted
     }
